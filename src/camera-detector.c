@@ -321,6 +321,7 @@ int camera_detector_list_devices(camera_detector_t *detector, camera_info_t **ca
 
 void camera_detector_free_list(camera_info_t *cameras, int count)
 {
+    UNUSED_PARAMETER(count);
     if (cameras) {
         free(cameras);
     }

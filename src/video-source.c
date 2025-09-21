@@ -1,6 +1,7 @@
 #include "video-source.h"
 #include "utils/logging.h"
 #include "utils/error-handling.h"
+#include <util/platform.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>

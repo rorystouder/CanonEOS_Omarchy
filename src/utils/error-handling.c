@@ -8,7 +8,6 @@
 #include <pthread.h>
 
 static __thread error_context_t g_last_error;
-static pthread_mutex_t g_error_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 const char* canon_error_string(canon_error_t error)
 {

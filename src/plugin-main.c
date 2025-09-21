@@ -1,5 +1,6 @@
 #include <obs-module.h>
 #include <obs-source.h>
+#include <util/platform.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -71,8 +72,8 @@ static obs_properties_t *canon_eos_get_properties(void *data)
         obs_property_list_add_string(device_list, "None", "");
 
         for (int i = 0; i < count; i++) {
-            char display_name[256];
-            snprintf(display_name, sizeof(display_name), "%s (%s)",
+            char display_name[512];
+            snprintf(display_name, sizeof(display_name), "%.127s (%.127s)",
                     cameras[i].model_name, cameras[i].device_path);
             obs_property_list_add_string(device_list,
                                         display_name,
