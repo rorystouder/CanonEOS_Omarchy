@@ -1,14 +1,111 @@
+# Build artifacts
+build/
+*.o
+*.so
+*.a
+*.dylib
+*.dll
+
+# CMake files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+install_manifest.txt
+CTestTestfile.cmake
+Testing/
+
+# Debug files
+*.dSYM/
+*.pdb
+core
+vgcore.*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.log.*
+
+# Package files
 *.tar
 *.tar.*
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.zip
+*.tgz
+*.deb
+*.rpm
+*.pkg.tar.xz
 *.jar
 *.exe
 *.msi
-*.deb
-*.zip
-*.tgz
-*.log
-*.log.*
 *.sig
 
+# Test outputs
+test_canon_plugin
+test_results.xml
+coverage.info
+coverage/
+
+# Valgrind output
+valgrind-*.log
+memcheck-*.log
+
+# Static analysis
+cppcheck-*.xml
+
+# Generated documentation
+docs/html/
+docs/latex/
+
+# Backup files
+*.bak
+*.backup
+
+# Local configuration
+local.conf
+.env
+
+# Compiled Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Dependencies (if vendored)
+deps/
+third_party/
+
+# User-specific files
+*.user
+*.suo
+*.ncb
+*.aps
+*.opt
+*.positions
+*.identcache
+
+# Runtime files
+*.pid
+*.sock
+
+# Coverage files
+*.gcov
+*.gcda
+*.gcno
+
+# Generated packages
 pkg/
-src/
