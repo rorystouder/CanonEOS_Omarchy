@@ -279,6 +279,11 @@ canon_error_t video_source_get_frame(video_source_t *source,
         if (ret == ETIMEDOUT) {
             pthread_mutex_unlock(&source->mutex);
             return CANON_ERROR_TIMEOUT;
+        } else if (ret != 0) {
+            // Handle any other error from pthread_cond_timedwait
+            pthread_mutex_unlock(&source->mutex);
+            canon_log(LOG_ERROR, "pthread_cond_timedwait failed with error %d", ret);
+            return CANON_ERROR_UNKNOWN;
         }
     }
 

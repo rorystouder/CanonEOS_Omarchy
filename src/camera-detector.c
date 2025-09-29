@@ -158,14 +158,17 @@ static int hotplug_callback(libusb_context *ctx, libusb_device *device,
 static void *monitor_thread_func(void *data)
 {
     camera_detector_t *detector = (camera_detector_t *)data;
-    
+
     canon_log(LOG_DEBUG, "Camera monitor thread started");
-    
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 100000;  // 100ms timeout
+
     while (detector->running) {
-        libusb_handle_events_timeout_completed(detector->usb_context, NULL, NULL);
-        usleep(POLL_INTERVAL_MS * 1000);
+        libusb_handle_events_timeout_completed(detector->usb_context, &tv, NULL);
     }
-    
+
     canon_log(LOG_DEBUG, "Camera monitor thread stopped");
     return NULL;
 }

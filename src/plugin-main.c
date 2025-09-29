@@ -137,31 +137,46 @@ static void canon_eos_update(void *data, obs_data_t *settings)
 {
     struct canon_eos_source *source = data;
 
-    pthread_mutex_lock(&source->mutex);
-
     const char *new_device = obs_data_get_string(settings, "device_path");
     int resolution = (int)obs_data_get_int(settings, "resolution");
-    source->fps = (uint32_t)obs_data_get_int(settings, "fps");
+    uint32_t new_fps = (uint32_t)obs_data_get_int(settings, "fps");
 
+    uint32_t new_width, new_height;
     switch (resolution) {
         case 2160:
-            source->width = 3840;
-            source->height = 2160;
+            new_width = 3840;
+            new_height = 2160;
             break;
         case 1080:
-            source->width = 1920;
-            source->height = 1080;
+            new_width = 1920;
+            new_height = 1080;
             break;
         case 720:
-            source->width = 1280;
-            source->height = 720;
+            new_width = 1280;
+            new_height = 720;
             break;
         default:
-            source->width = 1920;
-            source->height = 1080;
+            new_width = 1920;
+            new_height = 1080;
     }
 
+    pthread_mutex_lock(&source->mutex);
+
+    source->width = new_width;
+    source->height = new_height;
+    source->fps = new_fps;
+
     if (!source->device_path || strcmp(source->device_path, new_device) != 0) {
+        // Stop capture thread before changing camera
+        bool was_running = source->thread_running;
+        if (source->thread_running) {
+            source->thread_running = false;
+            source->active = false;
+            pthread_mutex_unlock(&source->mutex);
+            pthread_join(source->capture_thread, NULL);
+            pthread_mutex_lock(&source->mutex);
+        }
+
         if (source->device_path) {
             bfree(source->device_path);
         }
@@ -190,6 +205,12 @@ static void canon_eos_update(void *data, obs_data_t *settings)
                              canon_error_string(err));
                     canon_camera_destroy(source->camera);
                     source->camera = NULL;
+                } else if (was_running) {
+                    // Restart capture thread if it was running
+                    source->active = true;
+                    source->thread_running = true;
+                    pthread_create(&source->capture_thread, NULL,
+                                  canon_eos_capture_thread, source);
                 }
             }
         }
@@ -222,8 +243,13 @@ static void canon_eos_destroy(void *data)
 {
     struct canon_eos_source *source = data;
 
+    // Stop capture thread first (must be done before destroying resources)
     if (source->thread_running) {
+        pthread_mutex_lock(&source->mutex);
         source->thread_running = false;
+        source->active = false;
+        pthread_mutex_unlock(&source->mutex);
+
         pthread_join(source->capture_thread, NULL);
     }
 
@@ -271,7 +297,15 @@ static void canon_eos_deactivate(void *data)
 
     pthread_mutex_lock(&source->mutex);
     source->active = false;
-    pthread_mutex_unlock(&source->mutex);
+
+    // Stop capture thread on deactivate
+    if (source->thread_running) {
+        source->thread_running = false;
+        pthread_mutex_unlock(&source->mutex);
+        pthread_join(source->capture_thread, NULL);
+    } else {
+        pthread_mutex_unlock(&source->mutex);
+    }
 
     canon_log(LOG_INFO, "Source deactivated");
 }
@@ -316,7 +350,14 @@ bool obs_module_load(void)
         return false;
     }
 
-    camera_detector_start(g_detector);
+    if (camera_detector_start(g_detector) != CANON_SUCCESS) {
+        canon_log(LOG_ERROR, "Failed to start camera detector");
+        camera_detector_destroy(g_detector);
+        g_detector = NULL;
+        canon_camera_cleanup_library();
+        pthread_mutex_unlock(&g_plugin_mutex);
+        return false;
+    }
 
     obs_register_source(&canon_eos_source);
 
@@ -348,6 +389,9 @@ void obs_module_unload(void)
 
     g_plugin_initialized = false;
     pthread_mutex_unlock(&g_plugin_mutex);
+
+    // Destroy the global mutex after final use
+    pthread_mutex_destroy(&g_plugin_mutex);
 
     canon_log(LOG_INFO, "Canon EOS plugin unloaded");
 }
