@@ -36,6 +36,9 @@ pkg_check_modules(GPHOTO2 REQUIRED libgphoto2>=2.5.27)
 # Find libusb
 pkg_check_modules(USB REQUIRED libusb-1.0>=1.0.24)
 
+# Find libjpeg
+find_package(JPEG REQUIRED)
+
 # Find threads
 find_package(Threads REQUIRED)
 
@@ -72,6 +75,7 @@ target_include_directories(obs-canon-eos PRIVATE
     ${OBS_INCLUDE_DIRS}
     ${GPHOTO2_INCLUDE_DIRS}
     ${USB_INCLUDE_DIRS}
+    ${JPEG_INCLUDE_DIR}
 )
 
 # Link libraries
@@ -79,6 +83,7 @@ target_link_libraries(obs-canon-eos
     ${OBS_LIBRARIES}
     ${GPHOTO2_LIBRARIES}
     ${USB_LIBRARIES}
+    ${JPEG_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
     m
 )

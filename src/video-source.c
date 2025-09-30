@@ -7,6 +7,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <jpeglib.h>
+#include <setjmp.h>
 
 #define FRAME_QUEUE_SIZE 4
 #define MAX_FRAME_SIZE (3840 * 2160 * 4)
@@ -17,6 +19,8 @@
 typedef struct {
     uint8_t *data[4];
     uint32_t linesize[4];
+    uint32_t width;
+    uint32_t height;
     uint64_t timestamp;
     bool in_use;
 } frame_buffer_t;
@@ -50,7 +54,7 @@ struct video_source_t {
 
 static void *capture_thread_func(void *data);
 static canon_error_t convert_jpeg_to_nv12(const uint8_t *jpeg_data, size_t jpeg_size,
-                                         uint8_t *nv12_data, uint32_t width, uint32_t height);
+                                         uint8_t *nv12_data, uint32_t *width, uint32_t *height);
 
 video_source_t *video_source_create(void)
 {
@@ -93,6 +97,10 @@ video_source_t *video_source_create(void)
         frame->data[1] = NULL;
         frame->data[2] = NULL;
         frame->data[3] = NULL;
+        frame->width = 0;
+        frame->height = 0;
+        frame->linesize[0] = 0;
+        frame->linesize[1] = 0;
         frame->in_use = false;
     }
 
@@ -294,13 +302,20 @@ canon_error_t video_source_get_frame(video_source_t *source,
 
     frame_buffer_t *buffer = &source->frame_queue[source->read_index];
 
+    // Validate buffer has been properly initialized with frame data
+    if (buffer->width == 0 || buffer->height == 0) {
+        pthread_mutex_unlock(&source->mutex);
+        canon_log(LOG_ERROR, "Buffer has invalid dimensions: %ux%u", buffer->width, buffer->height);
+        return CANON_ERROR_UNKNOWN;
+    }
+
     frame->data[0] = buffer->data[0];
-    frame->data[1] = buffer->data[0] + (source->format.width * source->format.height);
+    frame->data[1] = buffer->data[0] + (buffer->width * buffer->height);
     frame->linesize[0] = buffer->linesize[0];
     frame->linesize[1] = buffer->linesize[1];
     frame->timestamp = buffer->timestamp;
-    frame->width = source->format.width;
-    frame->height = source->format.height;
+    frame->width = buffer->width;
+    frame->height = buffer->height;
     frame->format = source->format.format;
 
     buffer->in_use = true;
@@ -417,6 +432,10 @@ static void *capture_thread_func(void *data)
             continue;
         }
 
+        if (source->frames_captured < 5) {
+            canon_log(LOG_INFO, "Captured JPEG frame: %zu bytes", bytes_written);
+        }
+
         pthread_mutex_lock(&source->mutex);
 
         if (source->frame_count >= FRAME_QUEUE_SIZE) {
@@ -428,21 +447,36 @@ static void *capture_thread_func(void *data)
         frame_buffer_t *buffer = &source->frame_queue[source->write_index];
 
         if (!buffer->in_use) {
+            buffer->width = source->format.width;
+            buffer->height = source->format.height;
+
             err = convert_jpeg_to_nv12(
                 source->conversion_buffer,
                 bytes_written,
                 buffer->data[0],
-                source->format.width,
-                source->format.height);
+                &buffer->width,
+                &buffer->height);
 
             if (err == CANON_SUCCESS) {
+                // Update linesize to match actual dimensions
+                buffer->linesize[0] = buffer->width;
+                buffer->linesize[1] = buffer->width;
+
                 buffer->timestamp = os_gettime_ns();
                 source->write_index = (source->write_index + 1) % FRAME_QUEUE_SIZE;
                 source->frame_count++;
                 source->frames_captured++;
                 source->last_frame_time = buffer->timestamp;
 
+                if (source->frames_captured < 5) {
+                    canon_log(LOG_INFO, "Converted frame to NV12: %ux%u (actual JPEG dimensions)",
+                             buffer->width, buffer->height);
+                }
+
                 pthread_cond_signal(&source->frame_available);
+            } else {
+                canon_log(LOG_ERROR, "Failed to convert JPEG to NV12: %s",
+                         canon_error_string(err));
             }
         }
 
@@ -456,17 +490,98 @@ static void *capture_thread_func(void *data)
 }
 
 static canon_error_t convert_jpeg_to_nv12(const uint8_t *jpeg_data, size_t jpeg_size,
-                                         uint8_t *nv12_data, uint32_t width, uint32_t height)
+                                         uint8_t *nv12_data, uint32_t *width, uint32_t *height)
 {
-    size_t y_size = width * height;
-    size_t uv_size = y_size / 2;
+    struct jpeg_decompress_struct cinfo;
+    struct jpeg_error_mgr jerr;
 
-    memset(nv12_data, 128, y_size);
-    memset(nv12_data + y_size, 128, uv_size);
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_decompress(&cinfo);
 
-    for (size_t i = 0; i < y_size && i < jpeg_size; i++) {
-        nv12_data[i] = jpeg_data[i];
+    jpeg_mem_src(&cinfo, (unsigned char *)jpeg_data, jpeg_size);
+
+    if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK) {
+        jpeg_destroy_decompress(&cinfo);
+        canon_log(LOG_ERROR, "Failed to read JPEG header");
+        return CANON_ERROR_UNKNOWN;
     }
 
+    cinfo.out_color_space = JCS_RGB;
+    jpeg_start_decompress(&cinfo);
+
+    // Use actual JPEG dimensions, not requested dimensions
+    uint32_t actual_width = cinfo.output_width;
+    uint32_t actual_height = cinfo.output_height;
+
+    static bool logged_mismatch = false;
+    if (!logged_mismatch && (actual_width != *width || actual_height != *height)) {
+        canon_log(LOG_INFO, "JPEG size: got %ux%u, requested %ux%u - using actual JPEG size",
+                 actual_width, actual_height, *width, *height);
+        logged_mismatch = true;
+    }
+
+    *width = actual_width;
+    *height = actual_height;
+
+    uint32_t row_stride = cinfo.output_width * cinfo.output_components;
+    JSAMPARRAY buffer = (*cinfo.mem->alloc_sarray)
+        ((j_common_ptr)&cinfo, JPOOL_IMAGE, row_stride, 1);
+
+    // Allocate RGB buffer
+    uint8_t *rgb_data = malloc(actual_width * actual_height * 3);
+    if (!rgb_data) {
+        jpeg_destroy_decompress(&cinfo);
+        return CANON_ERROR_MEMORY;
+    }
+
+    // Read JPEG into RGB
+    uint32_t row = 0;
+    while (cinfo.output_scanline < cinfo.output_height) {
+        jpeg_read_scanlines(&cinfo, buffer, 1);
+        memcpy(rgb_data + (row * actual_width * 3), buffer[0], actual_width * 3);
+        row++;
+    }
+
+    jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+
+    // Convert RGB to NV12
+    uint8_t *y_plane = nv12_data;
+    uint8_t *uv_plane = nv12_data + (actual_width * actual_height);
+
+    // Process Y plane
+    for (uint32_t i = 0; i < actual_height; i++) {
+        for (uint32_t j = 0; j < actual_width; j++) {
+            uint32_t rgb_idx = (i * actual_width + j) * 3;
+            uint8_t r = rgb_data[rgb_idx];
+            uint8_t g = rgb_data[rgb_idx + 1];
+            uint8_t b = rgb_data[rgb_idx + 2];
+
+            // RGB to Y
+            y_plane[i * actual_width + j] = (uint8_t)(0.299 * r + 0.587 * g + 0.114 * b);
+        }
+    }
+
+    // Process UV plane (subsampled 2x2)
+    // NV12: UV plane is half height, half width, but U and V are interleaved
+    // So each UV row has 'actual_width' bytes (actual_width/2 UV pairs * 2 bytes per pair)
+    for (uint32_t i = 0; i < actual_height; i += 2) {
+        for (uint32_t j = 0; j < actual_width; j += 2) {
+            uint32_t rgb_idx = (i * actual_width + j) * 3;
+            uint8_t r = rgb_data[rgb_idx];
+            uint8_t g = rgb_data[rgb_idx + 1];
+            uint8_t b = rgb_data[rgb_idx + 2];
+
+            // UV plane index: row * actual_width + column * 2 (for interleaved UV)
+            uint32_t uv_row = i / 2;
+            uint32_t uv_col = j / 2;
+            uint32_t uv_idx = uv_row * actual_width + uv_col * 2;
+
+            uv_plane[uv_idx] = (uint8_t)(-0.169 * r - 0.331 * g + 0.5 * b + 128);     // U
+            uv_plane[uv_idx + 1] = (uint8_t)(0.5 * r - 0.419 * g - 0.081 * b + 128);  // V
+        }
+    }
+
+    free(rgb_data);
     return CANON_SUCCESS;
 }

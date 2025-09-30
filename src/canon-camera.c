@@ -411,9 +411,19 @@ canon_error_t canon_camera_capture_frame(canon_camera_t *camera,
 
     ret = gp_camera_capture_preview(camera->gphoto_camera, file, camera->gphoto_context);
     if (ret < GP_OK) {
+        if (camera->frame_count < 5) {
+            canon_log(LOG_ERROR, "gp_camera_capture_preview failed: %s", gp_result_as_string(ret));
+        }
         gp_file_unref(file);
         pthread_mutex_unlock(&camera->mutex);
         return error_from_gphoto(ret);
+    }
+
+    if (camera->frame_count < 5) {
+        const char *data_check;
+        unsigned long size_check;
+        gp_file_get_data_and_size(file, &data_check, &size_check);
+        canon_log(LOG_INFO, "gp_camera_capture_preview succeeded: %lu bytes", size_check);
     }
 
     const char *data;

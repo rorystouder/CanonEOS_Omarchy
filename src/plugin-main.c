@@ -109,11 +109,25 @@ static void *canon_eos_capture_thread(void *data)
         if (source->active && source->camera && source->video) {
             struct obs_source_frame frame = {0};
 
-            if (video_source_get_frame(source->video, &frame) == CANON_SUCCESS) {
+            canon_error_t err = video_source_get_frame(source->video, &frame);
+            if (err == CANON_SUCCESS) {
                 frame.timestamp = os_gettime_ns();
-                frame.width = source->width;
-                frame.height = source->height;
+                // Note: frame.width and frame.height are already set by video_source_get_frame()
+                // to the actual JPEG dimensions, don't overwrite them!
                 frame.format = VIDEO_FORMAT_NV12;
+                frame.full_range = false;
+                frame.flip = true;  // Flip vertically to correct orientation
+
+                // Set color space info
+                video_format_get_parameters(VIDEO_CS_709, VIDEO_RANGE_PARTIAL,
+                                           frame.color_matrix, frame.color_range_min,
+                                           frame.color_range_max);
+
+                if (source->frame_count < 5) {
+                    canon_log(LOG_INFO, "Outputting frame to OBS: %ux%u, data[0]=%p, data[1]=%p, linesize[0]=%u, linesize[1]=%u",
+                             frame.width, frame.height, (void*)frame.data[0], (void*)frame.data[1],
+                             frame.linesize[0], frame.linesize[1]);
+                }
 
                 obs_source_output_video(source->source, &frame);
 
@@ -121,6 +135,14 @@ static void *canon_eos_capture_thread(void *data)
                 source->last_frame_time = frame.timestamp;
 
                 video_source_release_frame(source->video, &frame);
+
+                if (source->frame_count % 30 == 0) {
+                    canon_log(LOG_DEBUG, "Frames captured: %lu", (unsigned long)source->frame_count);
+                }
+            } else {
+                if (source->frame_count == 0) {
+                    canon_log(LOG_WARNING, "Failed to get first frame: %s", canon_error_string(err));
+                }
             }
         }
 
@@ -282,6 +304,32 @@ static void canon_eos_activate(void *data)
     source->active = true;
 
     if (!source->thread_running && source->camera) {
+        // Initialize video source with camera
+        if (source->video) {
+            video_format_info_t format = {
+                .width = source->width,
+                .height = source->height,
+                .fps = source->fps,
+                .format = VIDEO_FORMAT_NV12
+            };
+
+            canon_error_t err = video_source_init(source->video, source->camera, &format);
+            if (err != CANON_SUCCESS) {
+                canon_log(LOG_ERROR, "Failed to initialize video source: %s", canon_error_string(err));
+                pthread_mutex_unlock(&source->mutex);
+                return;
+            }
+
+            err = video_source_start(source->video);
+            if (err != CANON_SUCCESS) {
+                canon_log(LOG_ERROR, "Failed to start video source: %s", canon_error_string(err));
+                pthread_mutex_unlock(&source->mutex);
+                return;
+            }
+
+            canon_log(LOG_INFO, "Video source started successfully");
+        }
+
         source->thread_running = true;
         pthread_create(&source->capture_thread, NULL,
                       canon_eos_capture_thread, source);

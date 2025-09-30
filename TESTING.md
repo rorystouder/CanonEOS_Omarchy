@@ -117,33 +117,84 @@ sudo cp build/libobs-canon-eos.so /usr/lib/obs-plugins/
 sudo rm /usr/lib/obs-plugins/libobs-canon-eos.so
 ```
 
+### Video Capture Issues and Fixes
+
+#### Issue 1: No Video Displayed
+**Problem**: Camera detected but black screen in OBS.
+
+**Root Cause**: Missing JPEG decoding - gPhoto2 returns JPEG preview frames, not raw video.
+
+**Fix**: Added libjpeg support:
+1. Added `find_package(JPEG REQUIRED)` to CMakeLists.txt
+2. Implemented JPEG to NV12 conversion in `video-source.c`
+3. RGB intermediate buffer for color space conversion
+
+#### Issue 2: Upside-Down Video
+**Problem**: Video displayed but vertically flipped.
+
+**Fix**: Set `frame.flip = true` in `plugin-main.c:119` to correct orientation.
+
+#### Issue 3: Video Only 1/4 Size with "Snow"
+**Problem**: Video displayed in upper-right 1/4 of frame, rest filled with green/garbage pixels.
+
+**Root Cause**: Camera returns 1024x576 JPEG but plugin told OBS frames are 1280x720/1920x1080, causing:
+- Wrong UV plane stride calculations
+- Padding with uninitialized memory
+- Incorrect frame dimensions reported to OBS
+
+**Investigation**:
+```
+info: [Canon-EOS] gp_camera_capture_preview succeeded: 179393 bytes
+warning: [Canon-EOS] JPEG size mismatch: got 1024x576, expected 1280x720
+```
+
+**Fix**: Use actual JPEG dimensions throughout pipeline:
+1. Modified `convert_jpeg_to_nv12()` to return actual dimensions via pointer parameters
+2. Added `width` and `height` fields to `frame_buffer_t` structure
+3. Updated `video_source_get_frame()` to use buffer dimensions instead of format dimensions
+4. Removed dimension override in `plugin-main.c` that was forcing wrong size
+
+**Changes**:
+- `src/video-source.c`: Store actual frame dimensions in buffer, use for NV12 conversion
+- `src/plugin-main.c`: Don't overwrite frame.width/height from video_source_get_frame()
+
 ### Testing Results
 
 ✅ **OBS launches successfully** (no crashes)
 ✅ **Plugin loads without errors**
-✅ **Canon EOS R7 now detected** in device list
-⚠️ **Video feed not yet working** (next issue to investigate)
+✅ **Canon EOS R7 detected** in device list
+✅ **Video feed working** - Live preview displaying correctly
+✅ **Correct orientation** - Video no longer upside down
+✅ **Proper scaling** - Video fills frame without artifacts
+✅ **Actual JPEG dimensions used** - 1024x576 frames from camera displayed correctly
+
+**Final Log Output**:
+```
+info: [Canon-EOS] Captured JPEG frame: 162525 bytes
+info: [Canon-EOS] JPEG size: got 1024x576, requested 1280x720 - using actual JPEG size
+info: [Canon-EOS] Converted frame to NV12: 1024x576 (actual JPEG dimensions)
+info: [Canon-EOS] Outputting frame to OBS: 1024x576, data[0]=0x..., linesize[0]=1024, linesize[1]=1024
+```
 
 ### Next Steps
 
-1. **Debug video capture**
-   - Camera detected but no video displayed
-   - Check live view activation
-   - Verify frame capture from gPhoto2
+1. **Performance optimization**
+   - Monitor CPU usage during streaming
+   - Profile JPEG decode and NV12 conversion
+   - Consider hardware acceleration
 
-2. **Test with camera connected**
-   - Verify USB permissions
-   - Test frame capture pipeline
-   - Check JPEG to NV12 conversion
+2. **Resolution switching**
+   - Test all resolution options (720p, 1080p, 4K)
+   - Verify camera adapts preview size or maintains aspect ratio
 
 3. **Additional camera models**
-   - Test with other Canon models
+   - Test with other Canon EOS models
    - Add more USB product IDs as needed
 
-4. **Performance testing**
-   - Monitor CPU usage
-   - Check memory leaks with Valgrind
-   - Test thread safety with Helgrind
+4. **Long-running stability**
+   - Test for memory leaks over extended sessions
+   - Verify thread safety with Helgrind
+   - Test camera reconnection after disconnect
 
 ### Lessons Learned
 
@@ -163,14 +214,21 @@ sudo rm /usr/lib/obs-plugins/libobs-canon-eos.so
 
 ### Git Commits
 
-1. **2064c63** - fix: resolve critical threading and memory safety issues
-   - Fixed all 7 critical deadlock and crash bugs
-   - Added proper error handling throughout
+1. **a68b9e4** - fixing build errors
+   - Fixed compilation issues
 
-2. **[Pending]** - feat: add Canon EOS R7 support
-   - Added USB product ID 0x32F7
-   - Camera now appears in device list
+2. **8822dc7** - ini commit
+   - Initial codebase setup
+
+3. **f7c4f71** - Initial commit
+
+4. **[Pending]** - fix: video display issues - JPEG dimensions and NV12 conversion
+   - Added libjpeg support for JPEG decoding
+   - Fixed upside-down video with frame.flip flag
+   - Fixed video scaling by using actual JPEG dimensions (1024x576)
+   - Corrected NV12 conversion to use actual frame dimensions
+   - Added frame dimension validation
 
 ---
 
-**Status**: Plugin is stable and loads successfully. Camera detection working. Video capture needs debugging.
+**Status**: ✅ Plugin fully functional! Video feed working correctly with Canon EOS R7.
