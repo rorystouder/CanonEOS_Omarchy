@@ -28,6 +28,7 @@ static const canon_model_t g_supported_models[] = {
     {0x32D1, "Canon EOS R"},
     {0x32D2, "Canon EOS R5"},
     {0x32D3, "Canon EOS R6"},
+    {0x32F7, "Canon EOS R7"},
     {0x3280, "Canon EOS 90D"},
     {0x3299, "Canon EOS M50 Mark II"},
     {0, NULL}
