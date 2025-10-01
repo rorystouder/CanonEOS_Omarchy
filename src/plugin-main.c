@@ -14,7 +14,7 @@ OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("obs-canon-eos", "en-US")
 
 #define PLUGIN_NAME "Canon EOS Camera"
-#define PLUGIN_VERSION "1.0.0"
+#define PLUGIN_VERSION "1.1.0"
 
 static pthread_mutex_t g_plugin_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bool g_plugin_initialized = false;

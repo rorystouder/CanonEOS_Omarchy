@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(obs-canon-eos VERSION 1.0.0 LANGUAGES C CXX)
+project(obs-canon-eos VERSION 1.1.0 LANGUAGES C CXX)
 
 # Set C/C++ standards as per CLAUDE.md
 set(CMAKE_C_STANDARD 99)
