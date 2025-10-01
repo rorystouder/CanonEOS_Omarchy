@@ -44,7 +44,7 @@ sudo pacman -S valgrind cppcheck clang
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/canon-eos-obs-plugin.git
+git clone https://github.com/rorystouder/canon-eos-obs-plugin.git
 cd canon-eos-obs-plugin
 ```
 
@@ -218,7 +218,7 @@ This project is licensed under the GPL-2.0 License - see the LICENSE file for de
 
 ## Support
 
-- Report issues: [GitHub Issues](https://github.com/yourusername/canon-eos-obs-plugin/issues)
+- Report issues: [GitHub Issues](https://github.com/rorystouder/canon-eos-obs-plugin/issues)
 - Documentation: See PRD.md for full specifications
 - Development guide: See CLAUDE.md for coding standards
 
@@ -227,6 +227,7 @@ This project is licensed under the GPL-2.0 License - see the LICENSE file for de
 - OBS Project for the plugin API
 - gPhoto2 team for camera support libraries
 - Canon for EDSDK documentation
+- [@dhh](https://github.com/dhh)
 
 ---
 
