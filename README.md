@@ -15,7 +15,7 @@ Enable Canon EOS cameras as video sources in OBS Studio on Linux systems.
 - Canon EOS 5D Mark III/IV
 - Canon EOS 6D/6D Mark II
 - Canon EOS 7D Mark II
-- Canon EOS R/R5/R6
+- Canon EOS R/R5/R6/R7
 - Canon EOS 90D
 - Canon EOS M50 Mark II
 
