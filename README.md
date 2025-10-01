@@ -33,11 +33,13 @@ Install required packages:
 
 ```bash
 # For Arch/Omarchy Linux
-sudo pacman -S obs-studio cmake gcc pkgconf libusb gphoto2 libgphoto2
+sudo pacman -S obs-studio cmake gcc pkgconf libusb gphoto2 libgphoto2 libjpeg-turbo
 
 # Optional: Development tools
 sudo pacman -S valgrind cppcheck clang
 ```
+
+**Note**: `libjpeg-turbo` is required for JPEG preview frame decoding from the camera.
 
 ## Building from Source
 
@@ -208,9 +210,10 @@ OBS_MULTI_LOG_LEVEL=debug obs
 
 ## Known Issues
 
-- JPEG to NV12 conversion is simplified (proper implementation pending)
+- Camera returns lower resolution preview frames (e.g., 1024x576 when 1280x720 is requested)
 - Some camera models may require additional configuration
 - 4K support depends on USB bandwidth and system performance
+- First frame capture may timeout (normal - camera needs warm-up time)
 
 ## License
 
